@@ -10,7 +10,7 @@ class BinaryString < String
         if num == 0 then
             return read_int(1)[0]
         end
-        Array.new([num, self.length-@position].min).collect do
+        Array.new([0, [num, self.length-@position].min].max).collect do
             n = self[@position].unpack('c')[0]
             @position += 1
             if n == -128 # 16-bit
@@ -19,6 +19,23 @@ class BinaryString < String
             elsif n == -127 # 32-bit
                 n = self[@position..@position+3].unpack('l')[0]
                 @position += 4
+            end
+            n
+        end
+    end
+    def read_uint(num=0)
+        if num == 0 then
+            return read_uint(1)[0]
+        end
+        Array.new([0, [num, self.length-@position].min].max).collect do
+            n = read_int
+            [7,14,21].each do |i|
+                if n & (1 << i) != 0
+                    n += (read_int << i) - (1 << i)
+                end
+            end
+            if n & (1 << 28) then
+                n |= 0xF0000000
             end
             n
         end
@@ -43,6 +60,7 @@ class DemoParser
     def initialize(file)
         @file = File.new(file, 'rb')
         ObjectSpace.define_finalizer(self, self.class.method(:finalize).to_proc)
+        @players = Hash.new { |h,k| h[k] = Hash.new }
     end
     def parse
         raise 'Unrecognized format.' unless @file.read(16) == 'SAUERBRATEN_DEMO'
@@ -67,25 +85,20 @@ class DemoParser
                 when 0x1d # SV_TIMEUP
                     buffer.read_int
                 when 0x22 # SV_RESUME
-                    @players = Hash.new
                     while client_num = buffer.read_int
                         if client_num < 0 then break end
-                        @players[client_num] = Hash.new
                         @players[client_num][:info] = buffer.read_int(15)
                     end
                 when 0x03 # SV_INITCLIENT
                     client_num = buffer.read_int
                     player = @players[client_num]
-                    if player.nil? then
-                        #player = Hash.new    
-                    end
                     player[:name], player[:team] = buffer.read_string(2)
                     player[:model] = buffer.read_int
                 when 0x4f # SV_INITFLAGS
                     buffer.read_int(3)
                 when 0x51 # SV_CLIENT
-                    client_num, length = buffer.read_int(2)
-                    parse_messages(buffer.sub_buffer(length), client_num)
+                    client_num = buffer.read_int
+                    parse_messages(buffer.sub_buffer(buffer.read_uint), client_num)
                 when 0x1c # SV_CLIENTPING
                     @players[client][:ping] = buffer.read_int
                 when 0x11 # SV_SPAWN
@@ -93,15 +106,44 @@ class DemoParser
                 when 0x56 # SV_PAUSEGAME
                     buffer.read_int
                 when 0x20 # SV_SERVMSG
-                    p buffer.read_string # parse out colors
+                    p remove_colors(buffer.read_string)
                 when 0x07 # SV_CDIS - client disconnected
-                    p buffer.read_int
+                    client_num = buffer.read_int
+                    puts 'Disconnect: %s (%d)' % [@players[client_num][:name],client_num]
+                when 0x0e # SV_SHOTFX - weapon fired
+                    buffer.read_int(7)
+                when 0x0c # SV_DAMAGE - player hit?
+                    buffer.read_int(5)
+                when 0x0d # SV_HITPUSH - ?
+                    buffer.read_int(6)
+                when 0x0b # SV_DIED - player died?
+                    buffer.read_int(3)
+                when 0x37 # SV_SPECTATOR - player becomes spectator, or not spectator?
+                    @players[buffer.read_int][:spectator] = buffer.read_int == 1
+                when 0x36 # SV_CURRENTMASTER - player becomes master
+                    @players[buffer.read_int][:priv] = buffer.read_int
+                    # Clear all other privileges?
+                when 0x06 # SV_SOUND
+                    buffer.read_int
+                when 0x60 # SV_SWITCHMODEL
+                    buffer.read_int
+                when 0x39 # SV_SETTEAM
+                    @players[buffer.read_int][:team] = buffer.read_string
+                when 0x5f # SV_SWITCHNAME
+                    name = buffer.read_string
+                    puts 'Renamed %s -> %s' % [@players[client][:name], name]
+                    @players[client][:name] = name
+                when 0x05 # SV_TEXT
+                    puts '%s: %s' % [@players[client][:name], buffer.read_string]
                 else
                     puts 'Failed (at %d): %02x' % [buffer.position-1, token]
                     buffer.read_int(3).each { |i| if not i.nil? then puts '%02x' % i end }
                     exit
             end
         end
+    end
+    def remove_colors(str)
+        str.gsub(/\f\d/, '')
     end
     def DemoParser.finalize(id)
         @file.close()
