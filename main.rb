@@ -6,8 +6,11 @@ class BinaryString < String
         super
         @position = 0
     end
-    def read_int(num=1)
-        Array.new(num).collect do
+    def read_int(num=0)
+        if num == 0 then
+            return read_int(1)[0]
+        end
+        Array.new([num, self.length-@position].min).collect do
             n = self[@position].unpack('c')[0]
             @position += 1
 #            if n == 0x80 # 16-bit
@@ -20,14 +23,19 @@ class BinaryString < String
             n
         end
     end
-    def read_string
-        start, @position = @position, self.index("\x00", @position)+1
-        return self[start...@position-1]
+    def read_string(num=0)
+        if num == 0 then
+            return read_string(1)[0]
+        end
+        Array.new(num).collect do
+            start, @position = @position, self.index("\x00", @position)+1
+            self[start...@position-1]
+        end
     end
 end
 
 class DemoParser
-    attr_accessor :file
+    attr_accessor :file, :players
     def initialize(file)
         @file = File.new(file, 'rb')
         ObjectSpace.define_finalizer(self, self.class.method(:finalize).to_proc)
@@ -40,13 +48,12 @@ class DemoParser
             raise 'Unknown channel.' unless channel < 2
             buffer = BinaryString.new @file.read(length)
             [method(:parse_positions), method(:parse_messages)][channel].call(buffer)
-            break
         end
     end
     def parse_positions(buffer)
     end
     def parse_messages(buffer)
-        while token = buffer.read_int()[0]
+        while token = buffer.read_int
             case token
                 when 0x02 # SV_WELCOME
                     buffer.read_int
@@ -56,10 +63,21 @@ class DemoParser
                 when 0x1d # SV_TIMEUP
                     buffer.read_int
                 when 0x22 # SV_RESUME
-                    while (client_num = buffer.read_int) != "\xff"
-                        print client_num
-                        buffer.read_int(15)
+                    @players = Hash.new
+                    while (client_num = buffer.read_int) != -1
+                        @players[client_num] = Hash.new
+                        @players[client_num][:info] = buffer.read_int(15)
                     end
+                when 0x03 # SV_INITCLIENT
+                    client_num = buffer.read_int
+                    player = @players[client_num]
+                    if player.nil? then
+                        #player = Hash.new    
+                    end
+                    player[:name], player[:team] = buffer.read_string(2)
+                    player[:model] = buffer.read_int
+                when 0x4f # SV_INITFLAGS
+                    buffer.read_int(3)
                 else
                     puts 'Failed (at %d): %02x' % [buffer.position-1, token]
                     buffer.read_int(3).each { |i| puts '%02x' % i }
@@ -72,4 +90,5 @@ class DemoParser
     end
 end
 
-DemoParser.new('2009_11_29_19_30_55-instagib_team-ot-psl_match_-_}tc{hero_vs.__rb_honzik1').parse
+#DemoParser.new('2009_11_29_19_30_55-instagib_team-ot-psl_match_-_}tc{hero_vs.__rb_honzik1').parse
+DemoParser.new('2009_11_30_00_50_35-insta_ctf-forge').parse
