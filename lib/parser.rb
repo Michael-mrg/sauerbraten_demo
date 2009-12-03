@@ -2,27 +2,30 @@
 require 'lib/binary_string'
 
 class DemoParser
-    attr_accessor :players
+    attr_accessor :players, :teams, :game_mode
     def initialize(file, messages)
         @file = File.new(file, 'rb')
         ObjectSpace.define_finalizer(self, self.class.method(:finalize).to_proc)
         @players = Hash.new { |h,k| h[k] = { :frags => 0, :deaths => 1 } }
+        @teams = Hash.new { |h,k| h[k] = 0 }
         @messages = messages
         @identifiers = { :ctf => "CTF", :server => "Server", :frag => "Frag", :chat => "Chat" }
     end
-    def parse
+    def parse(&block)
         raise 'Unrecognized format.' unless @file.read(16) == 'SAUERBRATEN_DEMO'
         raise 'Incompatible demo.' unless @file.read(8).unpack('ii') == [1, 257]
         while data = @file.read(12)
             time, channel, length = data.unpack('iii')
             raise 'Unknown channel.' unless channel < 2
-            buffer = BinaryString.new @file.read(length)
-            [method(:parse_positions), method(:parse_messages)][channel].call(buffer)
+            if channel == 1
+                buffer = BinaryString.new @file.read(length)
+                parse_messages(buffer, block)
+            else
+                @file.seek(length, IO::SEEK_CUR)
+            end
         end
     end
-    def parse_positions(buffer)
-    end
-    def parse_messages(buffer, client=nil)
+    def parse_messages(buffer, block=nil, client=nil)
         while token = buffer.read_int
             case token
                 when 0x02 # SV_WELCOME
@@ -31,16 +34,20 @@ class DemoParser
                     client_num = buffer.read_int
                     player = @players[client_num]
                     player[:name], player[:team] = buffer.read_string(2)
+                    @teams[player[:team]]
                     player[:model] = buffer.read_int
+                    print_message(:server, "%s connected" % player[:name])
                 when 0x11 # SV_SPAWN
                     buffer.read_int(12)
                 when 0x15 # SV_MAPCHANGE
                     map_name = buffer.read_string
-                    game_mode, not_got_items = buffer.read_int(2)
+                    @game_mode, _ = buffer.read_int(2)
                 when 0x1c # SV_CLIENTPING
                     @players[client][:ping] = buffer.read_int
                 when 0x1d # SV_TIMEUP
-                    buffer.read_int
+                    if buffer.read_int == 0 and not block.nil?
+                        block.call(@players, @teams, @game_mode)
+                    end
                 when 0x22 # SV_RESUME
                     while client_num = buffer.read_int
                         if client_num < 0 then break end
@@ -48,7 +55,7 @@ class DemoParser
                     end
                 when 0x51 # SV_CLIENT
                     client_num = buffer.read_int
-                    parse_messages(buffer.sub_buffer(buffer.read_uint), client_num)
+                    parse_messages(buffer.sub_buffer(buffer.read_uint), client=client_num)
                 when 0x56 # SV_PAUSEGAME
                     buffer.read_int
 
@@ -56,6 +63,7 @@ class DemoParser
                 when 0x07 # SV_CDIS - client disconnected
                     client_num = buffer.read_int
                     print_message(:server, "%s disconnected" % @players[client_num][:name])
+                    @players.delete(client_num)
                 when 0x36 # SV_CURRENTMASTER - player becomes master
                     @players[buffer.read_int][:priv] = buffer.read_int
                     # Clear all other privileges?
@@ -77,7 +85,10 @@ class DemoParser
                     victim, actor, frags = buffer.read_int(3)
                     @players[actor][:frags] = frags
                     @players[victim][:deaths] += 1
-                    print_message(:frag, "%s killed (%d) %s." % [@players[actor][:name], frags, @players[victim][:name]])
+                    if @game_mode == 4 # team score = sum of player frags
+                        @teams[@players[actor][:team]] += 1
+                    end
+                    print_message(:frag, "%s fragged (%d) %s" % [@players[actor][:name], frags, @players[victim][:name]])
                 when 0x0c # SV_DAMAGE - player hit?
                     buffer.read_int(5)
                 when 0x0d # SV_HITPUSH - ?
@@ -89,24 +100,23 @@ class DemoParser
                 
                 # Player messages
                 when 0x05 # SV_TEXT
-                    str = buffer.read_string
-                    print_message(:chat, "%s: %s" % [@players[client][:name], str])
+                    print_message(:chat, "%s: %s" % [@players[client][:name], buffer.read_string])
                 when 0x20 # SV_SERVMSG
-                    str = buffer.read_string
-                    print_message(:server, remove_colors(str))
+                    print_message(:server, remove_colors(buffer.read_string))
                 
                 # CTF mode tokens
                 when 0x48 # SV_TAKEFLAG
                     client_num, flag = buffer.read_int(2)
-                    print_message(:ctf, "%s took the %d flag." % [@players[client_num][:name], flag])
+                    print_message(:ctf, "%s took the %s flag" % [@players[client_num][:name], ["good", "evil"][flag-1]])
                 when 0x49 # SV_RETURNFLAG
                     client_num, flag = buffer.read_int(2)
-                    print_message(:ctf, "%s returned the %d flag." % [@players[client_num][:name], flag])
+                    print_message(:ctf, "%s returned the %s flag" % [@players[client_num][:name], ["good", "evil"][flag-1]])
                 when 0x4d # SV_DROPFLAG
                     buffer.read_int(5)
                 when 0x4e # SV_SCOREFLAG
-                    client_num,_ = buffer.read_int(5)
-                    print_message(:ctf, "%s scored." % @players[client_num][:name])
+                    client_num, _, _, team, score = buffer.read_int(5)
+                    @teams[["good", "evil"][team-1]] = score
+                    print_message(:ctf, "%s scored" % @players[client_num][:name])
                 when 0x4f # SV_INITFLAGS
                     buffer.read_int(3)
 
