@@ -12,8 +12,9 @@ class DemoParser
         end
         @players = Hash.new { |h,k| h[k] = { :frags => 0, :deaths => 1 } }
         @teams = Hash.new { |h,k| h[k] = 0 }
+        @bases = Hash.new { |h,k| h[k] = "" }
         @messages = messages
-        @identifiers = { :ctf => 'CTF', :server => 'Server', :frag => 'Frag', :chat => 'Chat' }
+        @identifiers = { :ctf => 'CTF', :server => 'Server', :frag => 'Frag', :chat => 'Chat', :capture => 'Capture' }
         ObjectSpace.define_finalizer(self, self.class.method(:finalize).to_proc)
     end
     def parse(&block)
@@ -140,8 +141,17 @@ class DemoParser
                         buffer.read_int(2)
                     end
                 when 0x3b # SV_BASEINFO
-                    buffer.read_int
-                    buffer.read_string(2)
+                    base_id = buffer.read_int
+                    new_owner = buffer.read_string
+                    if @bases[base_id] != new_owner
+                        if new_owner != ""
+                            print_message(:capture, "%s captured base %d" % [new_owner, base_id])
+                        elsif @bases[base_id] != ""
+                            print_message(:capture, "%s lost base %d" % [@bases[base_id], base_id])
+                        end
+                    end
+                    @bases[base_id] = new_owner
+                    buffer.read_string
                     buffer.read_int(2)
                 when 0x3c # SV_BASESCORE
                     buffer.read_int

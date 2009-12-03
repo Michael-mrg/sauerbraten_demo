@@ -4,10 +4,10 @@ require 'lib/parser'
 
 options = {:show => [], :score => true}
 banner = 'Usage: %s [options] file' % $0
-message_types = [:ctf, :chat, :server, :frag]
+message_types = [:ctf, :chat, :server, :frag, :capture]
 OptionParser.new do |opts|
     opts.banner = banner
-    opts.on('-s', '--show [id]', 'Show messages by identifier', 'Identifiers: ctf, chat, server, frag') do |v|
+    opts.on('-s', '--show [id]', 'Show messages by identifier', 'Identifiers: %s' % message_types.join(', ')) do |v|
         v = v.intern
         if v == :all
             options[:show] = message_types
