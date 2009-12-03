@@ -2,7 +2,7 @@
 require 'optparse'
 require 'lib/parser'
 
-options = {:show => []}
+options = {:show => [], :score => true}
 banner = "Usage: %s [options] file" % $0
 OptionParser.new do |opts|
     opts.banner = banner
@@ -11,6 +11,9 @@ OptionParser.new do |opts|
             options[:show] = [:ctf, :chat, :server, :frag]
         end
         options[:show] << v.intern
+    end
+    opts.on("--no-score", "Disable final score display") do 
+        options[:score] = false
     end
 end.parse!
 if ARGV.empty?
@@ -24,13 +27,10 @@ def print_team(v, key=:frags)
     end
 end
 
-def spectator?(v)
-    v[:spectator] or (v.include? :info and v[:info][0] != 1)
-end
-
 parser = DemoParser.new(ARGV[0], options[:show])
 parser.parse do |players, teams, game_mode|
-    players = players.select { |k,v| not spectator? v }
+    if not options[:score] then break end
+    players = players.select { |k,v| not v[:spectator] and v.include? :info and v[:info][0] == 1 }
     if [4, 6, 8, 9, 10, 11, 12, 13, 14].include? game_mode # team modes
         teams.sort { |a,b| b[1] <=> a[1] }.each do |t,s|
             pv = players.select { |k,v| v[:team] == t }
@@ -41,6 +41,5 @@ parser.parse do |players, teams, game_mode|
     else
         print_team(players)
     end
-    puts
 end
 
