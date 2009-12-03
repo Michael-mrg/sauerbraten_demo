@@ -39,9 +39,10 @@ def print_team(v, key=:frags)
 end
 
 parser = DemoParser.new(ARGV[0], options[:show])
-parser.parse do |players, teams, game_mode|
+parser.parse do |players, teams, game_mode, map_name|
     if not options[:score] then break end
-    players = players.select { |k,v| not v[:spectator] and v.include? :info and v[:info][0] == 1 }
+    puts map_name
+    players = players.select { |k,v| not v[:spectator] and (not v.include? :info or v[:info][0] == 1) }
     if [4, 6, 8, 9, 10, 11, 12, 13, 14].include? game_mode # team modes
         teams.sort { |a,b| b[1] <=> a[1] }.each do |t,s|
             pv = players.select { |k,v| v[:team] == t }

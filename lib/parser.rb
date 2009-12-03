@@ -10,7 +10,7 @@ class DemoParser
         else
             @file = File.new(file, 'rb')
         end
-        @players = Hash.new { |h,k| h[k] = { :frags => 0, :deaths => 1 } }
+        @players = Hash.new { |h,k| h[k] = { :frags => 0, :deaths => 0 } }
         @teams = Hash.new { |h,k| h[k] = 0 }
         @bases = Hash.new { |h,k| h[k] = "" }
         @messages = messages
@@ -50,13 +50,13 @@ class DemoParser
                 when 0x11 # SV_SPAWN
                     buffer.read_int(12)
                 when 0x15 # SV_MAPCHANGE
-                    map_name = buffer.read_string
+                    @map_name = buffer.read_string
                     @game_mode, _ = buffer.read_int(2)
                 when 0x1c # SV_CLIENTPING
                     @players[client][:ping] = buffer.read_int
                 when 0x1d # SV_TIMEUP
                     if buffer.read_int == 0 and not block.nil?
-                        block.call(@players, @teams, @game_mode)
+                        block.call(@players, @teams, @game_mode, @map_name)
                     end
                 when 0x22 # SV_RESUME
                     while client_num = buffer.read_int
@@ -65,7 +65,7 @@ class DemoParser
                     end
                 when 0x51 # SV_CLIENT
                     client_num = buffer.read_int
-                    parse_messages(buffer.sub_buffer(buffer.read_uint), client=client_num)
+                    parse_messages(buffer.sub_buffer(buffer.read_uint), block, client_num)
                 when 0x56 # SV_PAUSEGAME
                     buffer.read_int
 
@@ -121,6 +121,9 @@ class DemoParser
                 when 0x49 # SV_RETURNFLAG
                     client_num, flag = buffer.read_int(2)
                     print_message(:ctf, '%s returned the %s flag' % [@players[client_num][:name], ['good', 'evil'][flag-1]])
+                when 0x4a # SV_RESETFLAG
+                    buffer.read_int
+                    @teams[['good', 'evil'][buffer.read_int-1]] = buffer.read_int
                 when 0x4d # SV_DROPFLAG
                     buffer.read_int(5)
                 when 0x4e # SV_SCOREFLAG
