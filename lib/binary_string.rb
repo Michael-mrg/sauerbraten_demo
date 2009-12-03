@@ -1,7 +1,7 @@
 #!/bin/env ruby
 
 class BinaryString < String
-    attr_accessor :position
+    attr_reader :position
     def initialize(str)
         super
         @position = 0
