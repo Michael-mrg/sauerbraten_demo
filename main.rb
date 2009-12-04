@@ -53,9 +53,9 @@ parser.parse do |players, teams, game_mode, map_name|
         positions = player.positions
         min_vals = Array.new(2) { |i| positions.values.collect { |a,b| [a,b][i] }.max }
         max_vals = Array.new(2) { |i| positions.values.collect { |a,b| [a,b][i] }.min }
-        scale = Array.new(2) { |i| (max_vals[i] - min_vals[i]) / WIDTH }
+        scale = Array.new(2) { |i| (max_vals[i] - min_vals[i]) / WIDTH.to_f }
         freq = positions.inject(Hash.new { |h,k| h[k] = 0 }) do |h, (k,v)|
-            h[Array.new(2) {|i| (v[i]-min_vals[i])/scale[i] }] += 1
+            h[Array.new(2) {|i| ((v[i]-min_vals[i])/scale[i]).round }] += 1
             h
         end
         max_freq = freq.values.max
