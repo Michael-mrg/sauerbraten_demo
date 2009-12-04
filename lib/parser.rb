@@ -1,8 +1,11 @@
 #!/bin/env ruby
 require 'lib/binary_string'
 
+GUNS = [50, 10, 30, 120, 100, 75, 25]
+IDENTIFIERS = { :ctf => 'CTF', :server => 'Server', :frag => 'Frag', :chat => 'Chat', :capture => 'Capture' }
+MODES = [['ffa', false], ['coop edit', false], ['teamplay', true], ['instagib', false], ['instagib team', true], ['efficiency', false], ['efficiency team', true], ['tactics', false], ['tactics team', true], ['capture', true], ['regen capture', true], ['ctf', true], ['insta ctf', true], ['protect', true], ['insta protect', true]]
+
 class DemoParser
-    attr_accessor :players, :teams, :game_mode
     def initialize(file, messages)
         if file =~ /dmo$/
             require 'zlib'
@@ -10,11 +13,11 @@ class DemoParser
         else
             @file = File.new(file, 'rb')
         end
-        @players = Hash.new { |h,k| h[k] = { :frags => 0, :deaths => 0 } }
+        # Players -> class
+        @players = Hash.new { |h,k| h[k] = { :frags => 0, :deaths => 0, :damage_fired => 0, :damage_inflicted => 0 } }
         @teams = Hash.new { |h,k| h[k] = 0 }
         @bases = Hash.new { |h,k| h[k] = "" }
         @messages = messages
-        @identifiers = { :ctf => 'CTF', :server => 'Server', :frag => 'Frag', :chat => 'Chat', :capture => 'Capture' }
         ObjectSpace.define_finalizer(self, self.class.method(:finalize).to_proc)
     end
     def parse(&block)
@@ -60,7 +63,7 @@ class DemoParser
                     end
                 when 0x22 # SV_RESUME
                     while client_num = buffer.read_int
-                        if client_num < 0 then break end
+                        break if client_num < 0
                         @players[client_num][:info] = buffer.read_int(15)
                     end
                 when 0x51 # SV_CLIENT
@@ -100,11 +103,13 @@ class DemoParser
                     end
                     print_message(:frag, '%s fragged (%d) %s' % [@players[actor][:name], frags, @players[victim][:name]])
                 when 0x0c # SV_DAMAGE - player hit?
-                    buffer.read_int(5)
+                    _, client_num, damage, _ = buffer.read_int(5)
+                    @players[client_num][:damage_inflicted] += damage
                 when 0x0d # SV_HITPUSH - ?
                     buffer.read_int(6)
                 when 0x0e # SV_SHOTFX - weapon fired
-                    buffer.read_int(8)
+                    client_num, weapon, _ = buffer.read_int(8)
+                    @players[client_num][:damage_fired] += GUNS[weapon]
                 when 0x13 # SV_GUNSELECT
                     buffer.read_int
                 
@@ -172,14 +177,15 @@ class DemoParser
 
                 else
                     puts 'Failed (at %d): %02x' % [buffer.position-1, token]
-                    buffer.read_int(3).each { |i| if not i.nil? then puts '%02x' % i end }
+                    # p buffer[0..buffer.position+4]
+                    buffer.read_int(3).each { |i| puts '%02x' % i unless i.nil? }
                     exit
             end
         end
     end
     def print_message(id, msg)
         if @messages.include? id
-            puts '%-10s %s' % [@identifiers[id], msg]
+            puts '%-10s %s' % [IDENTIFIERS[id], msg]
         end
     end
     def DemoParser.finalize(id)

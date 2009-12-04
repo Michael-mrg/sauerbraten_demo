@@ -34,19 +34,19 @@ end
 
 def print_team(v, key=:frags)
     v.sort { |a,b| b[1][key] <=> a[1][key] }.each do |h,k|
-        puts '%-15s %-5d%d' % [k[:name], k[:frags], k[:deaths]]
+        puts '%-15s %-5d%-5d%6.2f%%' % [k[:name], k[:frags], k[:deaths], 100.0*k[:damage_inflicted]/k[:damage_fired]]
     end
 end
 
 parser = DemoParser.new(ARGV[0], options[:show])
 parser.parse do |players, teams, game_mode, map_name|
-    if not options[:score] then break end
-    puts map_name
+    break unless options[:score]
+    puts '%s: %s' % [MODES[game_mode][0], map_name]
     players = players.select { |k,v| not v[:spectator] and (not v.include? :info or v[:info][0] == 1) }
-    if [4, 6, 8, 9, 10, 11, 12, 13, 14].include? game_mode # team modes
+    if MODES[game_mode][1]
         teams.sort { |a,b| b[1] <=> a[1] }.each do |t,s|
             pv = players.select { |k,v| v[:team] == t }
-            if pv.empty? then next end
+            next if pv.empty?
             puts '%s: %d' % [t, s]
             print_team(pv)
         end
