@@ -50,18 +50,19 @@ parser.parse do |players, teams, game_mode, map_name|
             next
         end
         player = players[cn]
-        positions = player.positions.collect { |i| i[0..1] }
-        max_x_pos = positions.max[0]
-        min_x_pos = positions.min[0]
-        max_y_pos = positions.max { |a,b| a[1] <=> b[1] }[1]
-        min_y_pos = positions.min { |a,b| a[1] <=> b[1] }[1]
-        x_scale = (max_x_pos - min_x_pos) / WIDTH
-        y_scale = (max_y_pos - min_y_pos) / WIDTH
-        positions.collect! { |i| [ (i[0] - min_x_pos) / x_scale, (i[1] - min_y_pos) / y_scale ] }
+        positions = player.positions
+        min_vals = Array.new(2) { |i| positions.values.collect { |a,b| [a,b][i] }.max }
+        max_vals = Array.new(2) { |i| positions.values.collect { |a,b| [a,b][i] }.min }
+        scale = Array.new(2) { |i| (max_vals[i] - min_vals[i]) / WIDTH }
+        freq = positions.inject(Hash.new { |h,k| h[k] = 0 }) do |h, (k,v)|
+            h[Array.new(2) {|i| (v[i]-min_vals[i])/scale[i] }] += 1
+            h
+        end
+        max_freq = freq.values.max
         puts player.name
         WIDTH.times do |x|
             WIDTH.times do |y|
-                print (positions.include? [x,y]) ? 'x' : ' '
+                print (freq.include? [x,y]) ? (9.0 * freq[[x,y]] / max_freq).round : ' '
             end
             puts
         end

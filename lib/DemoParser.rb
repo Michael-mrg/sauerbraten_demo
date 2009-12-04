@@ -27,7 +27,7 @@ class DemoParser
         raise 'Incompatible demo.' unless @file.read(8).unpack('ii') == [1, 257]
         position = 24
         while data = @file.read(12)
-            time, channel, length = data.unpack('iii')
+            @time, channel, length = data.unpack('iii')
             raise 'Unknown channel.' unless channel < 2
 
             unless @size == 0
@@ -54,7 +54,7 @@ class DemoParser
                 when 0x04 # SV_POS
                     client_num = buffer.read_int
                     x, y, z, _ = buffer.read_uint(4)
-                    @players[client_num].move([x,y,z]) if @track.include? client_num
+                    @players[client_num].move(@time, [x,y]) if @track.include? client_num
                     buffer.read_int(5)
                     state = buffer.read_uint
                     buffer.read_int(2) unless state & 0x20 == 0
@@ -87,6 +87,7 @@ class DemoParser
                     @players[client].ping = buffer.read_int
                 when 0x1d # SV_TIMEUP
                     if buffer.read_int == 0 and not block.nil?
+                        print ' '*100,"\r"
                         block.call(@players, @teams, @game_mode, @map_name)
                     end
                 when 0x22 # SV_RESUME

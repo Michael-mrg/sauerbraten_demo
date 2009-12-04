@@ -4,7 +4,7 @@ class Player
     def initialize
         @spectator = false
         @frags = @deaths = @damage_fired = @damage_inflicted = 0
-        @positions = []
+        @positions = {}
     end
     def shot_fired(damage)
         @damage_fired += damage
@@ -17,7 +17,7 @@ class Player
         return n unless n.nan?
         0
     end
-    def move(position)
-        @positions << position
+    def move(time, position)
+        @positions[time] = position
     end
 end
