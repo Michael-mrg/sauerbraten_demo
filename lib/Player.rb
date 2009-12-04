@@ -1,13 +1,10 @@
 class Player
-    attr_accessor :name, :team, :frags, :deaths, :info, :ping
-    attr_accessor :spectator, :priv
-    def initialize(name='', team='', model=0)
-        @name = name
-        @team = team
-        @model = model
-        @info = []
+    attr_accessor :name, :team, :model, :frags, :deaths, :ping
+    attr_accessor :spectator, :priv, :positions
+    def initialize
         @spectator = false
         @frags = @deaths = @damage_fired = @damage_inflicted = 0
+        @positions = []
     end
     def shot_fired(damage)
         @damage_fired += damage
@@ -20,7 +17,7 @@ class Player
         return n unless n.nan?
         0
     end
-    def spectator?
-        @spectator or (not @info.empty? and @info[0] == 1)
+    def move(position)
+        @positions << position
     end
 end

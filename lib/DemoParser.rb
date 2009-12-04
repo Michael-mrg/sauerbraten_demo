@@ -6,7 +6,7 @@ IDENTIFIERS = { :ctf => 'CTF', :server => 'Server', :frag => 'Frag', :chat => 'C
 MODES = [['ffa', false], ['coop edit', false], ['teamplay', true], ['instagib', false], ['instagib team', true], ['efficiency', false], ['efficiency team', true], ['tactics', false], ['tactics team', true], ['capture', true], ['regen capture', true], ['ctf', true], ['insta ctf', true], ['protect', true], ['insta protect', true]]
 
 class DemoParser
-    def initialize(file, messages)
+    def initialize(file, messages, track=[])
         if file =~ /dmo$/
             require 'zlib'
             @file = Zlib::GzipReader.open(file)
@@ -16,6 +16,7 @@ class DemoParser
         @players = Hash.new { |h,k| h[k] = Player.new }
         @teams = Hash.new { |h,k| h[k] = 0 }
         @bases = Hash.new { |h,k| h[k] = "" }
+        @track = track
         @messages = messages
         ObjectSpace.define_finalizer(self, self.class.method(:finalize).to_proc)
     end
@@ -25,15 +26,35 @@ class DemoParser
         while data = @file.read(12)
             time, channel, length = data.unpack('iii')
             raise 'Unknown channel.' unless channel < 2
-            if channel == 1
-                buffer = BinaryString.new @file.read(length)
-                parse_messages(buffer, block)
-            else
+            if @track.empty? and channel == 0
                 if @file.methods.include? 'seek'
                     @file.seek(length, IO::SEEK_CUR)
                 else
                     @file.read(length)
                 end
+                next
+            end
+            buffer = BinaryString.new @file.read(length)
+            parse_positions(buffer) if channel == 0
+            parse_messages(buffer, block) if channel == 1
+        end
+    end
+    def parse_positions(buffer)
+        while token = buffer.read_int
+            case token
+                when 0x04 # SV_POS
+                    client_num = buffer.read_int
+                    x, y, z, _ = buffer.read_uint(4)
+                    @players[client_num].move([x,y,z]) if @track.include? client_num
+                    buffer.read_int(5)
+                    state = buffer.read_uint
+                    buffer.read_int(2) unless state & 0x20 == 0
+                    buffer.read_int unless state & 0x10 == 0
+                    buffer.read_uint
+                else
+                    puts '@P Failed (at %d): %02x' % [buffer.position-1, token]
+                    buffer.read_int(3).each { |i| puts '%02x' % i unless i.nil? }
+                    exit
             end
         end
     end
@@ -43,8 +64,9 @@ class DemoParser
                 when 0x02 # SV_WELCOME
                     buffer.read_int
                 when 0x03 # SV_INITCLIENT
-                    client_num = buffer.read_int
-                    player = @players[client_num] = Player.new(*buffer.read_string(2), buffer.read_int)
+                    player = @players[buffer.read_int]
+                    player.name, player.team = buffer.read_string(2)
+                    player.model = buffer.read_int
                     @teams[player.team]
                     print_message(:server, '%s connected' % player.name)
                 when 0x11 # SV_SPAWN
@@ -61,7 +83,7 @@ class DemoParser
                 when 0x22 # SV_RESUME
                     while client_num = buffer.read_int
                         break if client_num < 0
-                        @players[client_num].info = buffer.read_int(15)
+                        @players[client_num].spectator |= buffer.read_int(15)[0] != 1
                     end
                 when 0x51 # SV_CLIENT
                     client_num = buffer.read_int
@@ -174,7 +196,6 @@ class DemoParser
 
                 else
                     puts 'Failed (at %d): %02x' % [buffer.position-1, token]
-                    # p buffer[0..buffer.position+4]
                     buffer.read_int(3).each { |i| puts '%02x' % i unless i.nil? }
                     exit
             end
