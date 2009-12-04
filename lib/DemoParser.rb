@@ -10,8 +10,10 @@ class DemoParser
         if file =~ /dmo$/
             require 'zlib'
             @file = Zlib::GzipReader.open(file)
+            @size = 0
         else
             @file = File.new(file, 'rb')
+            @size = File.size(file)
         end
         @players = Hash.new { |h,k| h[k] = Player.new }
         @teams = Hash.new { |h,k| h[k] = 0 }
@@ -23,9 +25,16 @@ class DemoParser
     def parse(&block)
         raise 'Unrecognized format.' unless @file.read(16) == 'SAUERBRATEN_DEMO'
         raise 'Incompatible demo.' unless @file.read(8).unpack('ii') == [1, 257]
+        position = 24
         while data = @file.read(12)
             time, channel, length = data.unpack('iii')
             raise 'Unknown channel.' unless channel < 2
+
+            unless @size == 0
+                position += 12 + length unless @size == 0
+                print "%.2f%%\r" % [100.0 * position / @size]
+            end
+
             if @track.empty? and channel == 0
                 if @file.methods.include? 'seek'
                     @file.seek(length, IO::SEEK_CUR)
