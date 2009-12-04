@@ -1,5 +1,3 @@
-#!/bin/env ruby
-
 class BinaryString < String
     attr_reader :position
     def initialize(str)
