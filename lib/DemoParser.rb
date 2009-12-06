@@ -141,6 +141,7 @@ class DemoParser
                     @players[client_num].shot_fired(GUNS[weapon])
                 when 0x13 # SV_GUNSELECT
                     buffer.read_int
+                when 0x14 # SV_TAUNT
                 
                 # Player messages
                 when 0x05 # SV_TEXT
