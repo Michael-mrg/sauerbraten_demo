@@ -20,32 +20,38 @@ class DemoParser
         @bases = Hash.new { |h,k| h[k] = "" }
         @track = track
         @messages = messages
+        @block_called = false
         ObjectSpace.define_finalizer(self, self.class.method(:finalize).to_proc)
     end
     def parse(&block)
         raise 'Unrecognized format.' unless @file.read(16) == 'SAUERBRATEN_DEMO'
         raise 'Incompatible demo.' unless @file.read(8).unpack('ii') == [1, 257]
         position = 24
-        while data = @file.read(12)
-            @time, channel, length = data.unpack('iii')
-            raise 'Unknown channel.' unless channel < 2
+        begin
+            until (data = @file.read(12)).nil?
+                @time, channel, length = data.unpack('iii')
+                raise 'Unknown channel.' unless channel < 2
 
-            unless @size == 0
-                position += 12 + length unless @size == 0
-                print "%.2f%%\r" % [100.0 * position / @size]
-            end
-
-            if @track.empty? and channel == 0
-                if @file.methods.include? 'seek'
-                    @file.seek(length, IO::SEEK_CUR)
-                else
-                    @file.read(length)
+                unless @size == 0
+                    position += 12 + length unless @size == 0
+                    print "%.2f%%\r" % [100.0 * position / @size]
                 end
-                next
+
+                if @track.empty? and channel == 0
+                    if @file.methods.include? 'seek'
+                        @file.seek(length, IO::SEEK_CUR)
+                    else
+                        @file.read(length)
+                    end
+                    next
+                end
+                buffer = BinaryString.new @file.read(length)
+                parse_positions(buffer) if channel == 0
+                parse_messages(buffer, block) if channel == 1
             end
-            buffer = BinaryString.new @file.read(length)
-            parse_positions(buffer) if channel == 0
-            parse_messages(buffer, block) if channel == 1
+        rescue
+            puts 'Demo file corrupted.'
+            block.call(@players, @teams, @game_mode, @map_name) if not @block_called
         end
     end
     def parse_positions(buffer)
@@ -89,6 +95,7 @@ class DemoParser
                     if buffer.read_int == 0 and not block.nil?
                         print ' '*100,"\r"
                         block.call(@players, @teams, @game_mode, @map_name)
+                        @block_called = true
                     end
                 when 0x22 # SV_RESUME
                     while client_num = buffer.read_int
